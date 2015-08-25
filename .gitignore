@@ -3,3 +3,6 @@ dump
 
 # compilation
 *.o
+
+# output binary
+tda
