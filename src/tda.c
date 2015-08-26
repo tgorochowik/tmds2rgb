@@ -14,6 +14,11 @@
 #define CTRLTOKEN_VSYNC         0x154
 #define CTRLTOKEN_VHSYNC        0x2ab
 
+#define IMG_HSYNC_COLOR         0x90C3D4
+#define IMG_VSYNC_COLOR         0xC390D4
+#define IMG_VHSYNC_COLOR        0xD4A190
+#define IMG_BLANK_COLOR         0xA1D490
+
 /* Prepare global variables for arg parser */
 const char *argp_program_version = TDA_VERSION;
 static char doc[] = "TMDS dump analyzer";
@@ -26,14 +31,18 @@ struct arguments {
   int verbose;
   int quiet;
   int channel_info;
+  int show_syncs;
 };
 
 static struct argp_option argp_options[] = {
   {"verbose",       'v', 0,      0, "Produce verbose output" },
   {"quiet",         'q', 0,      0, "Don't produce any output" },
-  {"out",           'o', "FILE", 0, "Write decoded RGB data to FILE" },
   {"channel-info",  'c', 0,      0,
     "Show count of control tokens on each channel" },
+  {0,               0,   0,      0, "Output writing options:"},
+  {"out",           'o', "FILE", 0, "Write decoded RGB data to FILE" },
+  {"include-syncs", 's', 0,      0,
+    "Include syncs visualization to the RGB dump" },
   { 0 }
 };
 
@@ -53,6 +62,9 @@ static error_t argp_parser(int key, char *arg, struct argp_state *state) {
     break;
   case 'o':
     arguments->rgb_dump_filename = arg;
+    break;
+  case 's':
+    arguments->show_syncs = 1;
     break;
   case ARGP_KEY_ARG:
     switch(state->arg_num) {
@@ -136,6 +148,30 @@ struct tmds_pixel parse_tmds_pixel(uint32_t data)
   return px;
 }
 
+uint8_t is_hsync(struct tmds_pixel px)
+{
+  int i;
+  for (i = 0; i < 3; i++) {
+    if (px.d[i] == CTRLTOKEN_HSYNC || px.d[i] == CTRLTOKEN_VHSYNC) {
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+uint8_t is_vsync(struct tmds_pixel px)
+{
+  int i;
+  for (i = 0; i < 3; i++) {
+    if (px.d[i] == CTRLTOKEN_VSYNC || px.d[i] == CTRLTOKEN_VHSYNC) {
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
 int main(int argc, char *argv[])
 {
   struct arguments args;
@@ -153,6 +189,7 @@ int main(int argc, char *argv[])
   args.quiet = 0;
   args.channel_info = 0;
   args.rgb_dump_filename = NULL;
+  args.show_syncs = 0;
 
   /* Parse program arguments */
   argp_parse(&argp, argc, argv, 0, 0, &args);
@@ -213,6 +250,20 @@ int main(int argc, char *argv[])
       write(fdo, &rgb_px, 4);
     } else {
       ctrl_found = 0;
+
+      if (!args.show_syncs)
+        continue;
+
+      if (is_hsync(px) && is_vsync(px)) {
+        rgb_px = IMG_VHSYNC_COLOR;
+      } else if (is_hsync(px)) {
+        rgb_px = IMG_HSYNC_COLOR;
+      } else if (is_vsync(px)) {
+        rgb_px = IMG_VSYNC_COLOR;
+      } else {
+        rgb_px = IMG_BLANK_COLOR;
+      }
+      write(fdo, &rgb_px, 4);
     }
 
     i++;
