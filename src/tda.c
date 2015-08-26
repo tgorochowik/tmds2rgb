@@ -118,20 +118,18 @@ uint8_t tmds2rgb(uint16_t tmds)
 
 struct tmds_pixel {
   /* These are really 10b values */
-  uint16_t d0;
-  uint16_t d1;
-  uint16_t d2;
+  uint16_t d[3];
 };
 
 struct tmds_pixel parse_tmds_pixel(uint32_t data)
 {
   struct tmds_pixel px;
 
-  px.d2 = data & TMDS_VALUE_MASK;
+  px.d[2] = data & TMDS_VALUE_MASK;
   data >>= TMDS_CHANNEL_LEN;
-  px.d1 = data & TMDS_VALUE_MASK;
+  px.d[1] = data & TMDS_VALUE_MASK;
   data >>= TMDS_CHANNEL_LEN;
-  px.d0 = data & TMDS_VALUE_MASK;
+  px.d[0] = data & TMDS_VALUE_MASK;
 
   return px;
 }
@@ -141,7 +139,7 @@ int main(int argc, char *argv[])
   struct arguments args;
   int fd, fdo;
   uint32_t c, r;
-  unsigned int i = 0;
+  unsigned int i = 0, j;
   struct tmds_pixel px;
   uint8_t ctrl_found = 0x0;
   struct channel_stats stats[3] = {};
@@ -178,79 +176,35 @@ int main(int argc, char *argv[])
   while(read(fd, &c, 4) != 0) {
     px = parse_tmds_pixel(c);
 
-    switch(px.d0) {
-    case CTRLTOKEN_BLANK:
-      log(LOG_VERBOSE, "D0: Found BLANK @ %d!\n", i);
-      stats[0].blanks++;
-      ctrl_found = 1;
-      break;
-    case CTRLTOKEN_HSYNC:
-      log(LOG_VERBOSE, "D0: Found HSYNC @ %d!\n", i);
-      stats[0].hsyncs++;
-      ctrl_found = 1;
-      break;
-    case CTRLTOKEN_VSYNC:
-      log(LOG_VERBOSE, "D0: Found VSYNC @ %d!\n", i);
-      stats[0].vsyncs++;
-      ctrl_found = 1;
-      break;
-    case CTRLTOKEN_VHSYNC:
-      log(LOG_VERBOSE, "D0: Found VSYNC + HSYNC @ %d!\n", i);
-      stats[0].hvsyncs++;
-      ctrl_found = 1;
-      break;
-    }
-
-    switch(px.d1) {
-    case CTRLTOKEN_BLANK:
-      log(LOG_VERBOSE, "D1: Found BLANK @ %d!\n", i);
-      stats[1].blanks++;
-      ctrl_found = 1;
-      break;
-    case CTRLTOKEN_HSYNC:
-      log(LOG_VERBOSE, "D1: Found HSYNC @ %d!\n", i);
-      stats[1].hsyncs++;
-      ctrl_found = 1;
-      break;
-    case CTRLTOKEN_VSYNC:
-      log(LOG_VERBOSE, "D1: Found VSYNC @ %d!\n", i);
-      stats[1].vsyncs++;
-      ctrl_found = 1;
-      break;
-    case CTRLTOKEN_VHSYNC:
-      log(LOG_VERBOSE, "D1: Found VSYNC + HSYNC @ %d!\n", i);
-      stats[1].hvsyncs++;
-      ctrl_found = 1;
-      break;
-    }
-
-    switch(px.d2) {
-    case CTRLTOKEN_BLANK:
-      log(LOG_VERBOSE, "D2: Found BLANK @ %d!\n", i);
-      stats[2].blanks++;
-      ctrl_found = 1;
-      break;
-    case CTRLTOKEN_HSYNC:
-      log(LOG_VERBOSE, "D2: Found HSYNC @ %d!\n", i);
-      stats[2].hsyncs++;
-      ctrl_found = 1;
-      break;
-    case CTRLTOKEN_VSYNC:
-      log(LOG_VERBOSE, "D2: Found VSYNC @ %d!\n", i);
-      stats[2].vsyncs++;
-      ctrl_found = 1;
-      break;
-    case CTRLTOKEN_VHSYNC:
-      log(LOG_VERBOSE, "D2: Found VSYNC + HSYNC @ %d!\n", i);
-      stats[2].hvsyncs++;
-      ctrl_found = 1;
-      break;
+    for (j = 0; j < 3; j++) {
+      switch(px.d[j]) {
+      case CTRLTOKEN_BLANK:
+        log(LOG_VERBOSE, "D%d: Found BLANK @ %d!\n", j, i);
+        stats[j].blanks++;
+        ctrl_found = 1;
+        break;
+      case CTRLTOKEN_HSYNC:
+        log(LOG_VERBOSE, "D%d: Found HSYNC @ %d!\n", j, i);
+        stats[j].hsyncs++;
+        ctrl_found = 1;
+        break;
+      case CTRLTOKEN_VSYNC:
+        log(LOG_VERBOSE, "D%d: Found VSYNC @ %d!\n", j, i);
+        stats[j].vsyncs++;
+        ctrl_found = 1;
+        break;
+      case CTRLTOKEN_VHSYNC:
+        log(LOG_VERBOSE, "D%d: Found VSYNC + HSYNC @ %d!\n", j, i);
+        stats[j].hvsyncs++;
+        ctrl_found = 1;
+        break;
+      }
     }
 
     if (!ctrl_found) {
-      rgb_px = tmds2rgb(px.d0);
-      rgb_px |= tmds2rgb(px.d1) << 8;
-      rgb_px |= tmds2rgb(px.d2) << 16;
+      rgb_px = tmds2rgb(px.d[0]);
+      rgb_px |= tmds2rgb(px.d[1]) << 8;
+      rgb_px |= tmds2rgb(px.d[2]) << 16;
       write(fdo, &rgb_px, 4);
     } else {
       ctrl_found = 0;
