@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <argp.h>
 
 #define TMDS_CHANNEL_LEN        10
 #define TMDS_CHUNK_PAD_LEN      2
@@ -12,6 +13,47 @@
 #define CTRLTOKEN_HSYNC         0xab
 #define CTRLTOKEN_VSYNC         0x154
 #define CTRLTOKEN_VHSYNC        0x2ab
+
+/* Prepare global variables for arg parser */
+const char *argp_program_version = TDA_VERSION;
+static char doc[] = "TMDS dump analyzer";
+static char args_doc[] = "<tmds_dump_in> <rgb_dump_out>";
+
+/* Prapare struct for holding parsed arguments */
+struct arguments {
+  char *tmds_dump_filename;
+  char *rgb_dump_filename;
+};
+
+/* Define argument parser */
+static error_t argp_parser(int key, char *arg, struct argp_state *state) {
+  struct arguments *arguments = state->input;
+
+  switch (key) {
+  case ARGP_KEY_ARG:
+    switch(state->arg_num) {
+    case 0:
+      arguments->tmds_dump_filename = arg;
+      break;
+    case 1:
+      arguments->rgb_dump_filename = arg;
+      break;
+    default:
+      argp_usage(state);
+    }
+    break;
+  case ARGP_KEY_END:
+    if (state->arg_num < 2)
+      argp_usage (state);
+    break;
+  default:
+    return ARGP_ERR_UNKNOWN;
+  }
+  return 0;
+}
+
+/* Initialize the argp struct */
+static struct argp argp = { 0, argp_parser, args_doc, doc, 0, 0, 0 };
 
 uint8_t tmds2rgb(uint16_t tmds)
 {
@@ -53,8 +95,9 @@ struct tmds_pixel parse_tmds_pixel(uint32_t data)
   return px;
 }
 
-int main(int argc, const char *argv[])
+int main(int argc, char *argv[])
 {
+  struct arguments args;
   int fd, fdo;
   uint32_t c, r;
   unsigned int i = 0;
@@ -63,20 +106,18 @@ int main(int argc, const char *argv[])
 
   uint32_t rgb_px;
 
-  if (argc < 3) {
-    printf("Usage: %s <tmds_dump_in> <rgb_dump_out>\n", argv[0]);
-    return -1;
-  }
+  /* Parse program arguments */
+  argp_parse(&argp, argc, argv, 0, 0, &args);
 
-  fd = open(argv[1], O_RDONLY);
+  fd = open(args.tmds_dump_filename, O_RDONLY);
   if (fd < 0) {
-    fprintf(stderr, "Could not open %s file.\n", argv[1]);
+    fprintf(stderr, "Could not open %s file.\n", args.tmds_dump_filename);
     return -1;
   }
 
-  fdo = open(argv[2], O_RDWR | O_CREAT | O_TRUNC);
+  fdo = open(args.rgb_dump_filename, O_RDWR | O_CREAT | O_TRUNC);
   if (fdo < 0) {
-    fprintf(stderr, "Could not open %s file.\n", argv[2]);
+    fprintf(stderr, "Could not open %s file.\n", args.rgb_dump_filename);
     return -1;
   }
 
