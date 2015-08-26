@@ -139,6 +139,15 @@ struct channel_stats {
   uint32_t hvsyncs;
 };
 
+struct resolution {
+  uint32_t x;
+  uint32_t y;
+
+  /* Helper fields for resolution calculation */
+  uint32_t x_lckd;
+  uint32_t last_token;
+};
+
 uint8_t tmds2rgb(uint16_t tmds)
 {
   uint8_t rgb;
@@ -228,8 +237,7 @@ int main(int argc, char *argv[])
   uint32_t last_ctrl = 0, last_hsync = 0;
   struct channel_stats stats[3] = {};
   uint8_t data_aligned = 0, first_frame_ended = 0;
-  uint32_t res_x = 0, res_y = 0, res_x_lckd = 0;
-  uint32_t res_x_blank = 0, res_y_blank = 0, res_x_blank_lckd = 0;
+  struct resolution res = {}, resb = {};
   uint32_t rgb_px;
 
   /* Initialize arguments to zero */
@@ -299,29 +307,29 @@ int main(int argc, char *argv[])
 
     /* Image width calculation */
     if (is_ctrl(px)) {
-      if (!res_x_lckd && last_ctrl && (i - last_ctrl > 1)) {
-        res_x = i - last_ctrl - 1;
-        res_x_lckd = 1;
+      if (!res.x_lckd && res.last_token && (i - res.last_token > 1)) {
+        res.x = i - res.last_token - 1;
+        res.x_lckd = 1;
       } else {
-        last_ctrl = i;
+        res.last_token = i;
       }
     }
     if (is_hsync(px) && !is_hsync(ppx)) {
-      if (!res_x_blank_lckd && last_hsync && (i - last_hsync > 1)) {
-        res_x_blank = i - last_hsync;
-        res_x_blank_lckd = 1;
+      if (!resb.x_lckd && resb.last_token && (i - resb.last_token > 1)) {
+        resb.x = i - resb.last_token;
+        resb.x_lckd = 1;
       } else {
-        last_hsync = i;
+        resb.last_token = i;
       }
     }
 
     /* Image height calculation */
     if (data_aligned && !first_frame_ended) {
       if (!is_ctrl(ppx) && is_ctrl(px)) {
-          res_y++;
+          res.y++;
       }
       if (!is_hsync(ppx) && is_hsync(px)) {
-        res_y_blank++;
+        resb.y++;
       }
     }
 
@@ -367,12 +375,12 @@ int main(int argc, char *argv[])
   close(fd);
   close(fdo);
 
-  if(args.show_resolution)
-    log(LOG_INFO, "Calculated image resolution: %dx%d\n", res_x, res_y);
+  if (args.show_resolution)
+    log(LOG_INFO, "Calculated frame resolution: %dx%d\n", res.x, res.y);
 
-  if(args.show_resolution_blanks)
-    log(LOG_INFO, "Calculated image resolution with blanks: %dx%d\n",
-        res_x_blank, res_y_blank);
+  if (args.show_resolution_blanks)
+    log(LOG_INFO, "Calculated frame resolution with blanks: %dx%d\n",
+        resb.x, resb.y);
 
   if (args.channel_info)
     for (i = 0; i < 3; i++) {
