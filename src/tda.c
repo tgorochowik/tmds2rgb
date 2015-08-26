@@ -25,11 +25,13 @@ struct arguments {
   char *rgb_dump_filename;
   int verbose;
   int quiet;
+  int channel_info;
 };
 
 static struct argp_option argp_options[] = {
   {"verbose",       'v', 0, 0, "Produce verbose output" },
   {"quiet",         'q', 0, 0, "Don't produce any output" },
+  {"channel-info",  'c', 0, 0, "Show count of control tokens on each channel" },
   { 0 }
 };
 
@@ -43,6 +45,9 @@ static error_t argp_parser(int key, char *arg, struct argp_state *state) {
     break;
   case 'q':
     arguments->quiet = 1;
+    break;
+  case 'c':
+    arguments->channel_info = 1;
     break;
   case ARGP_KEY_ARG:
     switch(state->arg_num) {
@@ -82,6 +87,14 @@ uint8_t log_priority;
               printf(format, ##args); } \
             } while(0);
 
+/* Image analysis related definitions */
+struct channel_stats {
+  /* This struct contains number of control tokens in the channel */
+  uint32_t blanks;
+  uint32_t hsyncs;
+  uint32_t vsyncs;
+  uint32_t hvsyncs;
+};
 
 uint8_t tmds2rgb(uint16_t tmds)
 {
@@ -131,12 +144,14 @@ int main(int argc, char *argv[])
   unsigned int i = 0;
   struct tmds_pixel px;
   uint8_t ctrl_found = 0x0;
+  struct channel_stats stats[3] = {};
 
   uint32_t rgb_px;
 
   /* Initialize arguments to zero */
   args.verbose = 0;
   args.quiet = 0;
+  args.channel_info = 0;
 
   /* Parse program arguments */
   argp_parse(&argp, argc, argv, 0, 0, &args);
@@ -166,18 +181,22 @@ int main(int argc, char *argv[])
     switch(px.d0) {
     case CTRLTOKEN_BLANK:
       log(LOG_VERBOSE, "D0: Found BLANK @ %d!\n", i);
+      stats[0].blanks++;
       ctrl_found = 1;
       break;
     case CTRLTOKEN_HSYNC:
       log(LOG_VERBOSE, "D0: Found HSYNC @ %d!\n", i);
+      stats[0].hsyncs++;
       ctrl_found = 1;
       break;
     case CTRLTOKEN_VSYNC:
       log(LOG_VERBOSE, "D0: Found VSYNC @ %d!\n", i);
+      stats[0].vsyncs++;
       ctrl_found = 1;
       break;
     case CTRLTOKEN_VHSYNC:
       log(LOG_VERBOSE, "D0: Found VSYNC + HSYNC @ %d!\n", i);
+      stats[0].hvsyncs++;
       ctrl_found = 1;
       break;
     }
@@ -185,18 +204,22 @@ int main(int argc, char *argv[])
     switch(px.d1) {
     case CTRLTOKEN_BLANK:
       log(LOG_VERBOSE, "D1: Found BLANK @ %d!\n", i);
+      stats[1].blanks++;
       ctrl_found = 1;
       break;
     case CTRLTOKEN_HSYNC:
       log(LOG_VERBOSE, "D1: Found HSYNC @ %d!\n", i);
+      stats[1].hsyncs++;
       ctrl_found = 1;
       break;
     case CTRLTOKEN_VSYNC:
       log(LOG_VERBOSE, "D1: Found VSYNC @ %d!\n", i);
+      stats[1].vsyncs++;
       ctrl_found = 1;
       break;
     case CTRLTOKEN_VHSYNC:
       log(LOG_VERBOSE, "D1: Found VSYNC + HSYNC @ %d!\n", i);
+      stats[1].hvsyncs++;
       ctrl_found = 1;
       break;
     }
@@ -204,18 +227,22 @@ int main(int argc, char *argv[])
     switch(px.d2) {
     case CTRLTOKEN_BLANK:
       log(LOG_VERBOSE, "D2: Found BLANK @ %d!\n", i);
+      stats[2].blanks++;
       ctrl_found = 1;
       break;
     case CTRLTOKEN_HSYNC:
       log(LOG_VERBOSE, "D2: Found HSYNC @ %d!\n", i);
+      stats[2].hsyncs++;
       ctrl_found = 1;
       break;
     case CTRLTOKEN_VSYNC:
       log(LOG_VERBOSE, "D2: Found VSYNC @ %d!\n", i);
+      stats[2].vsyncs++;
       ctrl_found = 1;
       break;
     case CTRLTOKEN_VHSYNC:
       log(LOG_VERBOSE, "D2: Found VSYNC + HSYNC @ %d!\n", i);
+      stats[2].hvsyncs++;
       ctrl_found = 1;
       break;
     }
@@ -234,5 +261,20 @@ int main(int argc, char *argv[])
 
   close(fd);
   close(fdo);
+
+  if (!args.channel_info)
+    return 0;
+
+  for (i = 0; i < 3; i++) {
+    log(LOG_INFO, "(d%d) (b:%8d) (h:%8d) (v:%8d) (hv:%8d) (total: %8d)\n",
+                   i,
+                   stats[i].blanks,
+                   stats[i].hsyncs,
+                   stats[i].vsyncs,
+                   stats[i].hvsyncs,
+                   stats[i].blanks + stats[i].hsyncs +
+                   stats[i].vsyncs + stats[i].hvsyncs);
+  }
+
   return 0;
 }
