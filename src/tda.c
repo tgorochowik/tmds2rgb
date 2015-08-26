@@ -213,7 +213,6 @@ int main(int argc, char *argv[])
   uint32_t c, r;
   unsigned int i = 0, j;
   struct tmds_pixel px, ppx;
-  uint8_t ctrl_found = 0x0;
   uint32_t last_ctrl = 0;
   struct channel_stats stats[3] = {};
   uint8_t data_aligned = 0, first_frame_ended = 0;
@@ -268,28 +267,24 @@ int main(int argc, char *argv[])
       case CTRLTOKEN_BLANK:
         log(LOG_VERBOSE, "D%d: Found BLANK @ %d!\n", j, i);
         stats[j].blanks++;
-        ctrl_found = 1;
         break;
       case CTRLTOKEN_HSYNC:
         log(LOG_VERBOSE, "D%d: Found HSYNC @ %d!\n", j, i);
         stats[j].hsyncs++;
-        ctrl_found = 1;
         break;
       case CTRLTOKEN_VSYNC:
         log(LOG_VERBOSE, "D%d: Found VSYNC @ %d!\n", j, i);
         stats[j].vsyncs++;
-        ctrl_found = 1;
         break;
       case CTRLTOKEN_VHSYNC:
         log(LOG_VERBOSE, "D%d: Found VSYNC + HSYNC @ %d!\n", j, i);
         stats[j].hvsyncs++;
-        ctrl_found = 1;
         break;
       }
     }
 
     /* Image width calculation */
-    if (ctrl_found) {
+    if (is_ctrl(px)) {
       if (!res_x_lckd && last_ctrl && (i - last_ctrl > 1)) {
         res_x = i - last_ctrl - 1;
         res_x_lckd = 1;
@@ -305,7 +300,7 @@ int main(int argc, char *argv[])
     }
 
     /* Check frame borders */
-    if (ctrl_found && !is_vsync(px) && is_vsync(ppx)) {
+    if (!is_vsync(px) && is_vsync(ppx)) {
       if (data_aligned) {
         first_frame_ended = 1;
         if (args.one_frame) {
@@ -318,17 +313,15 @@ int main(int argc, char *argv[])
     i++;
 
     if (args.align_rgb && !data_aligned) {
-      ctrl_found = 0;
       continue;
     }
 
-    if (!ctrl_found && args.rgb_dump_filename) {
+    if (!is_ctrl(px) && args.rgb_dump_filename) {
       rgb_px = tmds2rgb(px.d[0]);
       rgb_px |= tmds2rgb(px.d[1]) << 8;
       rgb_px |= tmds2rgb(px.d[2]) << 16;
       write(fdo, &rgb_px, 4);
     } else {
-      ctrl_found = 0;
       if (!args.show_syncs)
         continue;
 
