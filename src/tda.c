@@ -32,6 +32,7 @@ struct arguments {
   int quiet;
   int channel_info;
   int show_syncs;
+  int align_rgb;
 };
 
 static struct argp_option argp_options[] = {
@@ -43,6 +44,7 @@ static struct argp_option argp_options[] = {
   {"out",           'o', "FILE", 0, "Write decoded RGB data to FILE" },
   {"include-syncs", 's', 0,      0,
     "Include syncs visualization to the RGB dump" },
+  {"align",         'a', 0,      0, "Align dumped data to first valid VSYNC" },
   { 0 }
 };
 
@@ -65,6 +67,9 @@ static error_t argp_parser(int key, char *arg, struct argp_state *state) {
     break;
   case 's':
     arguments->show_syncs = 1;
+    break;
+  case 'a':
+    arguments->align_rgb = 1;
     break;
   case ARGP_KEY_ARG:
     switch(state->arg_num) {
@@ -178,9 +183,10 @@ int main(int argc, char *argv[])
   int fd, fdo;
   uint32_t c, r;
   unsigned int i = 0, j;
-  struct tmds_pixel px;
+  struct tmds_pixel px, ppx;
   uint8_t ctrl_found = 0x0;
   struct channel_stats stats[3] = {};
+  uint8_t data_aligned = 0;
 
   uint32_t rgb_px;
 
@@ -190,6 +196,7 @@ int main(int argc, char *argv[])
   args.channel_info = 0;
   args.rgb_dump_filename = NULL;
   args.show_syncs = 0;
+  args.align_rgb = 0;
 
   /* Parse program arguments */
   argp_parse(&argp, argc, argv, 0, 0, &args);
@@ -215,7 +222,13 @@ int main(int argc, char *argv[])
     }
   }
 
+  /* Read first pixel */
+  read(fd, &c, 4);
+  px = parse_tmds_pixel(c);
+
+  /* Loop over the rest of the dump */
   while(read(fd, &c, 4) != 0) {
+    ppx = px; /* set previous pixel */
     px = parse_tmds_pixel(c);
 
     for (j = 0; j < 3; j++) {
@@ -243,6 +256,16 @@ int main(int argc, char *argv[])
       }
     }
 
+    if (ctrl_found && !is_vsync(px) && is_vsync(ppx)) {
+        data_aligned = 1;
+    }
+    i++;
+
+    if (args.align_rgb && !data_aligned) {
+      ctrl_found = 0;
+      continue;
+    }
+
     if (!ctrl_found && args.rgb_dump_filename) {
       rgb_px = tmds2rgb(px.d[0]);
       rgb_px |= tmds2rgb(px.d[1]) << 8;
@@ -250,7 +273,6 @@ int main(int argc, char *argv[])
       write(fdo, &rgb_px, 4);
     } else {
       ctrl_found = 0;
-
       if (!args.show_syncs)
         continue;
 
@@ -265,8 +287,6 @@ int main(int argc, char *argv[])
       }
       write(fdo, &rgb_px, 4);
     }
-
-    i++;
   }
 
   close(fd);
