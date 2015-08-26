@@ -35,21 +35,30 @@ struct arguments {
   int align_rgb;
   int one_frame;
   int show_resolution;
+  int show_resolution_blanks;
 };
 
 static struct argp_option argp_options[] = {
-  {"verbose",       'v', 0,      0, "Produce verbose output" },
-  {"quiet",         'q', 0,      0, "Don't produce any output" },
-  {"resolution",    'r', 0,      0,
+  {"verbose",                   'v', 0,      0,
+    "Produce verbose output" },
+  {"quiet",                     'q', 0,      0,
+    "Don't produce any output" },
+  {"resolution",                'r', 0,      0,
     "Calculate and show the resolution of a single frame" },
-  {"channel-info",  'c', 0,      0,
+  {"resolution-with-blanks",    'R', 0,      0,
+    "Calculate and show the resolution of a single frame including blanks" },
+  {"channel-info",              'c', 0,      0,
     "Show count of control tokens on each channel" },
-  {0,               0,   0,      0, "Output writing options:"},
-  {"out",           'o', "FILE", 0, "Write decoded RGB data to FILE" },
-  {"include-syncs", 's', 0,      0,
+  {0,                            0,   0,      0,
+    "Output writing options:"},
+  {"out",                       'o', "FILE", 0,
+    "Write decoded RGB data to FILE" },
+  {"include-syncs",             's', 0,      0,
     "Include syncs visualization to the RGB dump" },
-  {"align",         'a', 0,      0, "Align dumped data to first valid VSYNC" },
-  {"one-frame",     '1', 0,      0, "Try to extract and dump only one frame" },
+  {"align",                     'a', 0,      0,
+    "Align dumped data to first valid VSYNC" },
+  {"one-frame",                 '1', 0,      0,
+    "Try to extract and dump only one frame" },
   { 0 }
 };
 
@@ -82,6 +91,9 @@ static error_t argp_parser(int key, char *arg, struct argp_state *state) {
     break;
   case 'r':
     arguments->show_resolution = 1;
+    break;
+  case 'R':
+    arguments->show_resolution_blanks = 1;
     break;
   case ARGP_KEY_ARG:
     switch(state->arg_num) {
@@ -213,10 +225,11 @@ int main(int argc, char *argv[])
   uint32_t c, r;
   unsigned int i = 0, j;
   struct tmds_pixel px, ppx;
-  uint32_t last_ctrl = 0;
+  uint32_t last_ctrl = 0, last_hsync = 0;
   struct channel_stats stats[3] = {};
   uint8_t data_aligned = 0, first_frame_ended = 0;
   uint32_t res_x = 0, res_y = 0, res_x_lckd = 0;
+  uint32_t res_x_blank = 0, res_y_blank = 0, res_x_blank_lckd = 0;
   uint32_t rgb_px;
 
   /* Initialize arguments to zero */
@@ -228,6 +241,7 @@ int main(int argc, char *argv[])
   args.align_rgb = 0;
   args.one_frame = 0;
   args.show_resolution = 0;
+  args.show_resolution_blanks = 0;
 
   /* Parse program arguments */
   argp_parse(&argp, argc, argv, 0, 0, &args);
@@ -292,11 +306,23 @@ int main(int argc, char *argv[])
         last_ctrl = i;
       }
     }
+    if (is_hsync(px) && !is_hsync(ppx)) {
+      if (!res_x_blank_lckd && last_hsync && (i - last_hsync > 1)) {
+        res_x_blank = i - last_hsync;
+        res_x_blank_lckd = 1;
+      } else {
+        last_hsync = i;
+      }
+    }
 
     /* Image height calculation */
-    if (!is_ctrl(ppx) && is_ctrl(px)) {
-      if (data_aligned && !first_frame_ended)
-        res_y++;
+    if (data_aligned && !first_frame_ended) {
+      if (!is_ctrl(ppx) && is_ctrl(px)) {
+          res_y++;
+      }
+      if (!is_hsync(ppx) && is_hsync(px)) {
+        res_y_blank++;
+      }
     }
 
     /* Check frame borders */
@@ -343,6 +369,10 @@ int main(int argc, char *argv[])
 
   if(args.show_resolution)
     log(LOG_INFO, "Calculated image resolution: %dx%d\n", res_x, res_y);
+
+  if(args.show_resolution_blanks)
+    log(LOG_INFO, "Calculated image resolution with blanks: %dx%d\n",
+        res_x_blank, res_y_blank);
 
   if (args.channel_info)
     for (i = 0; i < 3; i++) {
