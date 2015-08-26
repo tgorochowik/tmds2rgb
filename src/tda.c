@@ -17,7 +17,7 @@
 /* Prepare global variables for arg parser */
 const char *argp_program_version = TDA_VERSION;
 static char doc[] = "TMDS dump analyzer";
-static char args_doc[] = "<tmds_dump_in> <rgb_dump_out>";
+static char args_doc[] = "<tmds_dump>";
 
 /* Prapare struct for holding parsed arguments */
 struct arguments {
@@ -29,9 +29,11 @@ struct arguments {
 };
 
 static struct argp_option argp_options[] = {
-  {"verbose",       'v', 0, 0, "Produce verbose output" },
-  {"quiet",         'q', 0, 0, "Don't produce any output" },
-  {"channel-info",  'c', 0, 0, "Show count of control tokens on each channel" },
+  {"verbose",       'v', 0,      0, "Produce verbose output" },
+  {"quiet",         'q', 0,      0, "Don't produce any output" },
+  {"out",           'o', "FILE", 0, "Write decoded RGB data to FILE" },
+  {"channel-info",  'c', 0,      0,
+    "Show count of control tokens on each channel" },
   { 0 }
 };
 
@@ -49,20 +51,20 @@ static error_t argp_parser(int key, char *arg, struct argp_state *state) {
   case 'c':
     arguments->channel_info = 1;
     break;
+  case 'o':
+    arguments->rgb_dump_filename = arg;
+    break;
   case ARGP_KEY_ARG:
     switch(state->arg_num) {
     case 0:
       arguments->tmds_dump_filename = arg;
-      break;
-    case 1:
-      arguments->rgb_dump_filename = arg;
       break;
     default:
       argp_usage(state);
     }
     break;
   case ARGP_KEY_END:
-    if (state->arg_num < 2)
+    if (state->arg_num < 1)
       argp_usage (state);
     break;
   default:
@@ -150,6 +152,7 @@ int main(int argc, char *argv[])
   args.verbose = 0;
   args.quiet = 0;
   args.channel_info = 0;
+  args.rgb_dump_filename = NULL;
 
   /* Parse program arguments */
   argp_parse(&argp, argc, argv, 0, 0, &args);
@@ -167,10 +170,12 @@ int main(int argc, char *argv[])
     return -1;
   }
 
-  fdo = open(args.rgb_dump_filename, O_RDWR | O_CREAT | O_TRUNC);
-  if (fdo < 0) {
-    log(LOG_ERROR, "Could not open %s file.\n", args.rgb_dump_filename);
-    return -1;
+  if (args.rgb_dump_filename) {
+    fdo = open(args.rgb_dump_filename, O_RDWR | O_CREAT | O_TRUNC);
+    if (fdo < 0) {
+      log(LOG_ERROR, "Could not open %s file.\n", args.rgb_dump_filename);
+      return -1;
+    }
   }
 
   while(read(fd, &c, 4) != 0) {
@@ -201,7 +206,7 @@ int main(int argc, char *argv[])
       }
     }
 
-    if (!ctrl_found) {
+    if (!ctrl_found && args.rgb_dump_filename) {
       rgb_px = tmds2rgb(px.d[0]);
       rgb_px |= tmds2rgb(px.d[1]) << 8;
       rgb_px |= tmds2rgb(px.d[2]) << 16;
