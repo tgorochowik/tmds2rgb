@@ -33,6 +33,7 @@ struct arguments {
   int channel_info;
   int show_syncs;
   int align_rgb;
+  int one_frame;
 };
 
 static struct argp_option argp_options[] = {
@@ -45,6 +46,7 @@ static struct argp_option argp_options[] = {
   {"include-syncs", 's', 0,      0,
     "Include syncs visualization to the RGB dump" },
   {"align",         'a', 0,      0, "Align dumped data to first valid VSYNC" },
+  {"one-frame",     '1', 0,      0, "Try to extract and dump only one frame" },
   { 0 }
 };
 
@@ -69,6 +71,10 @@ static error_t argp_parser(int key, char *arg, struct argp_state *state) {
     arguments->show_syncs = 1;
     break;
   case 'a':
+    arguments->align_rgb = 1;
+    break;
+  case '1':
+    arguments->one_frame = 1;
     arguments->align_rgb = 1;
     break;
   case ARGP_KEY_ARG:
@@ -197,6 +203,7 @@ int main(int argc, char *argv[])
   args.rgb_dump_filename = NULL;
   args.show_syncs = 0;
   args.align_rgb = 0;
+  args.one_frame = 0;
 
   /* Parse program arguments */
   argp_parse(&argp, argc, argv, 0, 0, &args);
@@ -257,7 +264,11 @@ int main(int argc, char *argv[])
     }
 
     if (ctrl_found && !is_vsync(px) && is_vsync(ppx)) {
+      if(data_aligned == 1 && args.one_frame) {
+        break;
+      } else {
         data_aligned = 1;
+      }
     }
     i++;
 
