@@ -34,11 +34,14 @@ struct arguments {
   int show_syncs;
   int align_rgb;
   int one_frame;
+  int show_resolution;
 };
 
 static struct argp_option argp_options[] = {
   {"verbose",       'v', 0,      0, "Produce verbose output" },
   {"quiet",         'q', 0,      0, "Don't produce any output" },
+  {"resolution",    'r', 0,      0,
+    "Calculate and show the resolution of a single frame" },
   {"channel-info",  'c', 0,      0,
     "Show count of control tokens on each channel" },
   {0,               0,   0,      0, "Output writing options:"},
@@ -76,6 +79,9 @@ static error_t argp_parser(int key, char *arg, struct argp_state *state) {
   case '1':
     arguments->one_frame = 1;
     arguments->align_rgb = 1;
+    break;
+  case 'r':
+    arguments->show_resolution = 1;
     break;
   case ARGP_KEY_ARG:
     switch(state->arg_num) {
@@ -183,6 +189,23 @@ uint8_t is_vsync(struct tmds_pixel px)
   return 0;
 }
 
+uint8_t is_blank(struct tmds_pixel px)
+{
+  int i;
+  for (i = 0; i < 3; i++) {
+    if (px.d[i] == CTRLTOKEN_BLANK) {
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+uint8_t is_ctrl(struct tmds_pixel px)
+{
+  return is_hsync(px) || is_vsync(px) || is_blank(px);
+}
+
 int main(int argc, char *argv[])
 {
   struct arguments args;
@@ -191,9 +214,10 @@ int main(int argc, char *argv[])
   unsigned int i = 0, j;
   struct tmds_pixel px, ppx;
   uint8_t ctrl_found = 0x0;
+  uint32_t last_ctrl = 0;
   struct channel_stats stats[3] = {};
-  uint8_t data_aligned = 0;
-
+  uint8_t data_aligned = 0, first_frame_ended = 0;
+  uint32_t res_x = 0, res_y = 0, res_x_lckd = 0;
   uint32_t rgb_px;
 
   /* Initialize arguments to zero */
@@ -204,6 +228,7 @@ int main(int argc, char *argv[])
   args.show_syncs = 0;
   args.align_rgb = 0;
   args.one_frame = 0;
+  args.show_resolution = 0;
 
   /* Parse program arguments */
   argp_parse(&argp, argc, argv, 0, 0, &args);
@@ -263,9 +288,29 @@ int main(int argc, char *argv[])
       }
     }
 
+    /* Image width calculation */
+    if (ctrl_found) {
+      if (!res_x_lckd && last_ctrl && (i - last_ctrl > 1)) {
+        res_x = i - last_ctrl - 1;
+        res_x_lckd = 1;
+      } else {
+        last_ctrl = i;
+      }
+    }
+
+    /* Image height calculation */
+    if (!is_ctrl(ppx) && is_ctrl(px)) {
+      if (data_aligned && !first_frame_ended)
+        res_y++;
+    }
+
+    /* Check frame borders */
     if (ctrl_found && !is_vsync(px) && is_vsync(ppx)) {
-      if(data_aligned == 1 && args.one_frame) {
-        break;
+      if (data_aligned) {
+        first_frame_ended = 1;
+        if (args.one_frame) {
+          break;
+        }
       } else {
         data_aligned = 1;
       }
@@ -303,19 +348,20 @@ int main(int argc, char *argv[])
   close(fd);
   close(fdo);
 
-  if (!args.channel_info)
-    return 0;
+  if(args.show_resolution)
+    log(LOG_INFO, "Calculated image resolution: %dx%d\n", res_x, res_y);
 
-  for (i = 0; i < 3; i++) {
-    log(LOG_INFO, "(d%d) (b:%8d) (h:%8d) (v:%8d) (hv:%8d) (total: %8d)\n",
-                   i,
-                   stats[i].blanks,
-                   stats[i].hsyncs,
-                   stats[i].vsyncs,
-                   stats[i].hvsyncs,
-                   stats[i].blanks + stats[i].hsyncs +
-                   stats[i].vsyncs + stats[i].hvsyncs);
-  }
+  if (args.channel_info)
+    for (i = 0; i < 3; i++) {
+      log(LOG_INFO, "(d%d) (b:%8d) (h:%8d) (v:%8d) (hv:%8d) (total: %8d)\n",
+                     i,
+                     stats[i].blanks,
+                     stats[i].hsyncs,
+                     stats[i].vsyncs,
+                     stats[i].hvsyncs,
+                     stats[i].blanks + stats[i].hsyncs +
+                     stats[i].vsyncs + stats[i].hvsyncs);
+    }
 
   return 0;
 }
