@@ -23,6 +23,14 @@ static char args_doc[] = "<tmds_dump_in> <rgb_dump_out>";
 struct arguments {
   char *tmds_dump_filename;
   char *rgb_dump_filename;
+  int verbose;
+  int quiet;
+};
+
+static struct argp_option argp_options[] = {
+  {"verbose",       'v', 0, 0, "Produce verbose output" },
+  {"quiet",         'q', 0, 0, "Don't produce any output" },
+  { 0 }
 };
 
 /* Define argument parser */
@@ -30,6 +38,12 @@ static error_t argp_parser(int key, char *arg, struct argp_state *state) {
   struct arguments *arguments = state->input;
 
   switch (key) {
+  case 'v':
+    arguments->verbose = 1;
+    break;
+  case 'q':
+    arguments->quiet = 1;
+    break;
   case ARGP_KEY_ARG:
     switch(state->arg_num) {
     case 0:
@@ -53,7 +67,21 @@ static error_t argp_parser(int key, char *arg, struct argp_state *state) {
 }
 
 /* Initialize the argp struct */
-static struct argp argp = { 0, argp_parser, args_doc, doc, 0, 0, 0 };
+static struct argp argp = { argp_options, argp_parser, args_doc, doc, 0, 0, 0 };
+
+/* Log related definitions */
+#define LOG_INFO      0x1
+#define LOG_ERROR     0x2
+#define LOG_VERBOSE   0x4
+
+uint8_t log_priority;
+
+#define log(priority,format,args...) \
+            do { \
+              if (priority & log_priority) { \
+              printf(format, ##args); } \
+            } while(0);
+
 
 uint8_t tmds2rgb(uint16_t tmds)
 {
@@ -106,18 +134,29 @@ int main(int argc, char *argv[])
 
   uint32_t rgb_px;
 
+  /* Initialize arguments to zero */
+  args.verbose = 0;
+  args.quiet = 0;
+
   /* Parse program arguments */
   argp_parse(&argp, argc, argv, 0, 0, &args);
 
+  /* Set logging options */
+  if (args.verbose)
+    log_priority |= LOG_VERBOSE;
+
+  if (!args.quiet)
+    log_priority |= LOG_INFO | LOG_ERROR;
+
   fd = open(args.tmds_dump_filename, O_RDONLY);
   if (fd < 0) {
-    fprintf(stderr, "Could not open %s file.\n", args.tmds_dump_filename);
+    log(LOG_ERROR, "Could not open %s file.\n", args.tmds_dump_filename);
     return -1;
   }
 
   fdo = open(args.rgb_dump_filename, O_RDWR | O_CREAT | O_TRUNC);
   if (fdo < 0) {
-    fprintf(stderr, "Could not open %s file.\n", args.rgb_dump_filename);
+    log(LOG_ERROR, "Could not open %s file.\n", args.rgb_dump_filename);
     return -1;
   }
 
@@ -126,56 +165,57 @@ int main(int argc, char *argv[])
 
     switch(px.d0) {
     case CTRLTOKEN_BLANK:
-      /* Do not print blanks for now - too many of them */
+      log(LOG_VERBOSE, "D0: Found BLANK @ %d!\n", i);
+      ctrl_found = 1;
       break;
     case CTRLTOKEN_HSYNC:
-      printf("D0: Found HSYNC @ %d!\n", i);
+      log(LOG_VERBOSE, "D0: Found HSYNC @ %d!\n", i);
       ctrl_found = 1;
       break;
     case CTRLTOKEN_VSYNC:
-      printf("D0: Found VSYNC @ %d!\n", i);
+      log(LOG_VERBOSE, "D0: Found VSYNC @ %d!\n", i);
       ctrl_found = 1;
       break;
     case CTRLTOKEN_VHSYNC:
-      printf("D0: Found VSYNC + HSYNC @ %d!\n", i);
+      log(LOG_VERBOSE, "D0: Found VSYNC + HSYNC @ %d!\n", i);
       ctrl_found = 1;
       break;
     }
 
     switch(px.d1) {
     case CTRLTOKEN_BLANK:
-      /* Do not print blanks for now - too many of them */
+      log(LOG_VERBOSE, "D1: Found BLANK @ %d!\n", i);
       ctrl_found = 1;
       break;
     case CTRLTOKEN_HSYNC:
-      printf("D1: Found HSYNC @ %d!\n", i);
+      log(LOG_VERBOSE, "D1: Found HSYNC @ %d!\n", i);
       ctrl_found = 1;
       break;
     case CTRLTOKEN_VSYNC:
-      printf("D1: Found VSYNC @ %d!\n", i);
+      log(LOG_VERBOSE, "D1: Found VSYNC @ %d!\n", i);
       ctrl_found = 1;
       break;
     case CTRLTOKEN_VHSYNC:
-      printf("D1: Found VSYNC + HSYNC @ %d!\n", i);
+      log(LOG_VERBOSE, "D1: Found VSYNC + HSYNC @ %d!\n", i);
       ctrl_found = 1;
       break;
     }
 
     switch(px.d2) {
     case CTRLTOKEN_BLANK:
-      /* Do not print blanks for now - too many of them */
+      log(LOG_VERBOSE, "D2: Found BLANK @ %d!\n", i);
       ctrl_found = 1;
       break;
     case CTRLTOKEN_HSYNC:
-      printf("D2: Found HSYNC @ %d!\n", i);
+      log(LOG_VERBOSE, "D2: Found HSYNC @ %d!\n", i);
       ctrl_found = 1;
       break;
     case CTRLTOKEN_VSYNC:
-      printf("D2: Found VSYNC @ %d!\n", i);
+      log(LOG_VERBOSE, "D2: Found VSYNC @ %d!\n", i);
       ctrl_found = 1;
       break;
     case CTRLTOKEN_VHSYNC:
-      printf("D2: Found VSYNC + HSYNC @ %d!\n", i);
+      log(LOG_VERBOSE, "D2: Found VSYNC + HSYNC @ %d!\n", i);
       ctrl_found = 1;
       break;
     }
