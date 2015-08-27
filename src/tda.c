@@ -268,7 +268,9 @@ int main(int argc, char *argv[])
   }
 
   if (args.rgb_dump_filename) {
-    fdo = open(args.rgb_dump_filename, O_RDWR | O_CREAT | O_TRUNC);
+    fdo = open(args.rgb_dump_filename,
+               O_RDWR | O_CREAT | O_TRUNC,
+               S_IRWXU | S_IRWXG);
     if (fdo < 0) {
       log(LOG_ERROR, "Could not open %s file.\n", args.rgb_dump_filename);
       return -1;
