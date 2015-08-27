@@ -254,7 +254,8 @@ int main(int argc, char *argv[])
   uint32_t last_ctrl = 0, last_hsync = 0;
   struct channel_stats stats[3] = {};
   uint8_t data_aligned = 0, first_frame_ended = 0;
-  struct resolution res = {}, resb = {}, rest = {};
+  uint32_t data_aligned_at = 0;
+  struct resolution res = {}, resb = {}, rest = {}, restb = {};
   uint32_t rgb_px;
   char ppm_hdr[200] = {};
 
@@ -356,12 +357,16 @@ int main(int argc, char *argv[])
     }
 
     /* Image height calculation */
-    if (data_aligned && !first_frame_ended) {
+    if (data_aligned) {
       if (!is_ctrl(ppx) && is_ctrl(px)) {
-          res.y++;
+          rest.y++;
+          if (!first_frame_ended)
+            res.y++;
       }
       if (!is_hsync(ppx) && is_hsync(px)) {
-        resb.y++;
+        restb.y++;
+          if (!first_frame_ended)
+            resb.y++;
       }
     }
 
@@ -374,6 +379,7 @@ int main(int argc, char *argv[])
         }
       } else {
         data_aligned = 1;
+        data_aligned_at = i;
       }
     }
     i++;
@@ -413,12 +419,6 @@ int main(int argc, char *argv[])
   /* Calculate total output resolution */
   rest.x = (args.show_syncs) ? resb.x : res.x;
 
-  if (args.one_frame) {
-    rest.y = (args.show_syncs) ? resb.y : res.y;
-  } else {
-    rest.y = i / (rest.x);
-  }
-
   if (args.rgb_dump_filename && (strcasecmp(args.o_format, "ppm") == 0)) {
     /* Append header if using PPM format */
     if (args.rgb_dump_filename) {
@@ -433,7 +433,7 @@ int main(int argc, char *argv[])
               IMG_PPM_HDR_FORMAT,
               IMG_PPM_HDR_MAGIC,
               rest.x,
-              rest.y);
+              (args.show_syncs) ? restb.y : rest.y);
 
       lseek(fdo, 0, SEEK_SET);
       write(fdo, ppm_hdr, strlen(ppm_hdr));
