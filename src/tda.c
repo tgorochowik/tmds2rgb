@@ -45,7 +45,7 @@ static struct argp_option argp_options[] = {
     "Don't produce any output" },
   {"resolution",                'r', 0,      0,
     "Calculate and show the resolution of a single frame" },
-  {"resolution-with-blanks",    'R', 0,      0,
+  {"resolution-virt",           'R', 0,      0,
     "Calculate and show the resolution of a single frame including blanks" },
   {"channel-info",              'c', 0,      0,
     "Show count of control tokens on each channel" },
