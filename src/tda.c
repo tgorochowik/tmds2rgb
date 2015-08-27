@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <string.h>
 #include <argp.h>
 
 #define TMDS_CHANNEL_LEN        10
@@ -18,6 +19,9 @@
 #define IMG_VSYNC_COLOR         0xC390D4
 #define IMG_VHSYNC_COLOR        0xD4A190
 #define IMG_BLANK_COLOR         0xA1D490
+
+#define IMG_PPM_HDR_FORMAT      "%02s %020d %020d 255\n"
+#define IMG_PPM_HDR_MAGIC       "P6"
 
 /* Prepare global variables for arg parser */
 const char *argp_program_version = TDA_VERSION;
@@ -36,6 +40,7 @@ struct arguments {
   int one_frame;
   int show_resolution;
   int show_resolution_blanks;
+  char *o_format;
 };
 
 static struct argp_option argp_options[] = {
@@ -51,10 +56,13 @@ static struct argp_option argp_options[] = {
     "Show count of control tokens on each channel" },
   {0,                            0,   0,      0,
     "Output writing options:"},
+  {"format",                    'f', "FORMAT", 0,
+    "Write the output file using specified FORMAT. " \
+    "Available formats are: rgb/ppm." },
   {"out",                       'o', "FILE", 0,
-    "Write decoded RGB data to FILE" },
+    "Write decoded image data to FILE" },
   {"include-syncs",             's', 0,      0,
-    "Include syncs visualization to the RGB dump" },
+    "Include syncs visualization to the output file" },
   {"align",                     'a', 0,      0,
     "Align dumped data to first valid VSYNC" },
   {"one-frame",                 '1', 0,      0,
@@ -94,6 +102,9 @@ static error_t argp_parser(int key, char *arg, struct argp_state *state) {
     break;
   case 'R':
     arguments->show_resolution_blanks = 1;
+    break;
+  case 'f':
+    arguments->o_format = arg;
     break;
   case ARGP_KEY_ARG:
     switch(state->arg_num) {
@@ -237,8 +248,9 @@ int main(int argc, char *argv[])
   uint32_t last_ctrl = 0, last_hsync = 0;
   struct channel_stats stats[3] = {};
   uint8_t data_aligned = 0, first_frame_ended = 0;
-  struct resolution res = {}, resb = {};
+  struct resolution res = {}, resb = {}, res_out = {};
   uint32_t rgb_px;
+  char ppm_hdr[200] = {};
 
   /* Initialize arguments to zero */
   args.verbose = 0;
@@ -250,6 +262,7 @@ int main(int argc, char *argv[])
   args.one_frame = 0;
   args.show_resolution = 0;
   args.show_resolution_blanks = 0;
+  args.o_format = "rgb";
 
   /* Parse program arguments */
   argp_parse(&argp, argc, argv, 0, 0, &args);
@@ -260,6 +273,11 @@ int main(int argc, char *argv[])
 
   if (!args.quiet)
     log_priority |= LOG_INFO | LOG_ERROR;
+
+  /* Check output format */
+  if (strcasecmp(args.o_format, "RGB") && strcasecmp(args.o_format, "PPM")) {
+    log(LOG_ERROR, "Format not supported: %s. Using RGB.\n", args.o_format);
+  }
 
   fd = open(args.tmds_dump_filename, O_RDONLY);
   if (fd < 0) {
@@ -275,6 +293,12 @@ int main(int argc, char *argv[])
       log(LOG_ERROR, "Could not open %s file.\n", args.rgb_dump_filename);
       return -1;
     }
+  }
+
+  /* Reserve space for header for PPM format */
+  if (strcasecmp(args.o_format, "ppm") == 0) {
+    sprintf(ppm_hdr, IMG_PPM_HDR_FORMAT, IMG_PPM_HDR_MAGIC, 0, 0);
+    write(fdo, ppm_hdr, strlen(ppm_hdr));
   }
 
   /* Read first pixel */
@@ -376,6 +400,37 @@ int main(int argc, char *argv[])
 
   close(fd);
   close(fdo);
+
+  if (strcasecmp(args.o_format, "ppm") == 0) {
+    /* Append header if using PPM format */
+    if (args.rgb_dump_filename) {
+      fdo = open(args.rgb_dump_filename, O_WRONLY, S_IRWXU | S_IRWXG);
+      if (fdo < 0) {
+        log(LOG_ERROR, "Could not re-open %s file.\n",
+            args.rgb_dump_filename);
+        return -1;
+      }
+
+      /* Calculate output PPM resolution */
+      res_out.x = (args.show_syncs) ? resb.x : res.x;
+
+      if (args.one_frame) {
+        res_out.y = (args.show_syncs) ? resb.y : res.y;
+      } else {
+        res_out.y = i / (res_out.x);
+      }
+
+      sprintf(ppm_hdr,
+              IMG_PPM_HDR_FORMAT,
+              IMG_PPM_HDR_MAGIC,
+              res_out.x,
+              res_out.y);
+
+      lseek(fdo, 0, SEEK_SET);
+      write(fdo, ppm_hdr, strlen(ppm_hdr));
+    }
+    close(fdo);
+  }
 
   if (args.show_resolution)
     log(LOG_INFO, "Calculated frame resolution: %dx%d\n", res.x, res.y);
