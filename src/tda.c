@@ -354,7 +354,7 @@ int main(int argc, char *argv[])
       rgb_px = tmds2rgb(px.d[0]);
       rgb_px |= tmds2rgb(px.d[1]) << 8;
       rgb_px |= tmds2rgb(px.d[2]) << 16;
-      write(fdo, &rgb_px, 4);
+      write(fdo, &rgb_px, 3);
     } else {
       if (!args.show_syncs)
         continue;
@@ -368,7 +368,7 @@ int main(int argc, char *argv[])
       } else {
         rgb_px = IMG_BLANK_COLOR;
       }
-      write(fdo, &rgb_px, 4);
+      write(fdo, &rgb_px, 3);
     }
   }
 
