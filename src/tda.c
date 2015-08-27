@@ -300,12 +300,11 @@ int main(int argc, char *argv[])
       log(LOG_ERROR, "Could not open %s file.\n", args.rgb_dump_filename);
       return -1;
     }
-  }
-
-  /* Reserve space for header for PPM format */
-  if (strcasecmp(args.o_format, "ppm") == 0) {
-    sprintf(ppm_hdr, IMG_PPM_HDR_FORMAT, IMG_PPM_HDR_MAGIC, 0, 0);
-    write(fdo, ppm_hdr, strlen(ppm_hdr));
+    /* Reserve space for header for PPM format */
+    if (strcasecmp(args.o_format, "ppm") == 0) {
+      sprintf(ppm_hdr, IMG_PPM_HDR_FORMAT, IMG_PPM_HDR_MAGIC, 0, 0);
+      write(fdo, ppm_hdr, strlen(ppm_hdr));
+    }
   }
 
   /* Read first pixel */
@@ -383,7 +382,10 @@ int main(int argc, char *argv[])
       continue;
     }
 
-    if (!is_ctrl(px) && args.rgb_dump_filename) {
+    if (! args.rgb_dump_filename)
+      continue;
+
+    if (!is_ctrl(px)) {
       rgb_px = tmds2rgb(px.d[0]);
       rgb_px |= tmds2rgb(px.d[1]) << 8;
       rgb_px |= tmds2rgb(px.d[2]) << 16;
@@ -417,7 +419,7 @@ int main(int argc, char *argv[])
     rest.y = i / (rest.x);
   }
 
-  if (strcasecmp(args.o_format, "ppm") == 0) {
+  if (args.rgb_dump_filename && (strcasecmp(args.o_format, "ppm") == 0)) {
     /* Append header if using PPM format */
     if (args.rgb_dump_filename) {
       fdo = open(args.rgb_dump_filename, O_WRONLY, S_IRWXU | S_IRWXG);
