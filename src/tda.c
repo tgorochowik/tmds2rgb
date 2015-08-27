@@ -40,6 +40,7 @@ struct arguments {
   int one_frame;
   int show_resolution;
   int show_resolution_blanks;
+  int show_resolution_total;
   char *o_format;
 };
 
@@ -52,6 +53,8 @@ static struct argp_option argp_options[] = {
     "Calculate and show the resolution of a single frame" },
   {"resolution-virt",           'R', 0,      0,
     "Calculate and show the resolution of a single frame including blanks" },
+  {"resolution-total",          't', 0,      0,
+    "Calculate and show the total resolution of chosen region" },
   {"channel-info",              'c', 0,      0,
     "Show count of control tokens on each channel" },
   {0,                            0,   0,      0,
@@ -102,6 +105,9 @@ static error_t argp_parser(int key, char *arg, struct argp_state *state) {
     break;
   case 'R':
     arguments->show_resolution_blanks = 1;
+    break;
+  case 't':
+    arguments->show_resolution_total = 1;
     break;
   case 'f':
     arguments->o_format = arg;
@@ -248,7 +254,7 @@ int main(int argc, char *argv[])
   uint32_t last_ctrl = 0, last_hsync = 0;
   struct channel_stats stats[3] = {};
   uint8_t data_aligned = 0, first_frame_ended = 0;
-  struct resolution res = {}, resb = {}, res_out = {};
+  struct resolution res = {}, resb = {}, rest = {};
   uint32_t rgb_px;
   char ppm_hdr[200] = {};
 
@@ -262,6 +268,7 @@ int main(int argc, char *argv[])
   args.one_frame = 0;
   args.show_resolution = 0;
   args.show_resolution_blanks = 0;
+  args.show_resolution_total = 0;
   args.o_format = "rgb";
 
   /* Parse program arguments */
@@ -401,6 +408,15 @@ int main(int argc, char *argv[])
   close(fd);
   close(fdo);
 
+  /* Calculate total output resolution */
+  rest.x = (args.show_syncs) ? resb.x : res.x;
+
+  if (args.one_frame) {
+    rest.y = (args.show_syncs) ? resb.y : res.y;
+  } else {
+    rest.y = i / (rest.x);
+  }
+
   if (strcasecmp(args.o_format, "ppm") == 0) {
     /* Append header if using PPM format */
     if (args.rgb_dump_filename) {
@@ -411,20 +427,11 @@ int main(int argc, char *argv[])
         return -1;
       }
 
-      /* Calculate output PPM resolution */
-      res_out.x = (args.show_syncs) ? resb.x : res.x;
-
-      if (args.one_frame) {
-        res_out.y = (args.show_syncs) ? resb.y : res.y;
-      } else {
-        res_out.y = i / (res_out.x);
-      }
-
       sprintf(ppm_hdr,
               IMG_PPM_HDR_FORMAT,
               IMG_PPM_HDR_MAGIC,
-              res_out.x,
-              res_out.y);
+              rest.x,
+              rest.y);
 
       lseek(fdo, 0, SEEK_SET);
       write(fdo, ppm_hdr, strlen(ppm_hdr));
@@ -438,6 +445,10 @@ int main(int argc, char *argv[])
   if (args.show_resolution_blanks)
     log(LOG_INFO, "Calculated frame resolution with blanks: %dx%d\n",
         resb.x, resb.y);
+
+  if (args.show_resolution_total)
+    log(LOG_INFO, "Calculated total resolution of chosen region: %dx%d\n",
+        rest.x, rest.y);
 
   if (args.channel_info)
     for (i = 0; i < 3; i++) {
