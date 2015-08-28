@@ -203,6 +203,19 @@ struct tmds_pixel parse_tmds_pixel(uint32_t data)
   return px;
 }
 
+struct tmds_pixel tmds_pixel_shift(struct tmds_pixel p, struct tmds_pixel n, uint8_t shift)
+{
+  struct tmds_pixel px;
+  int i;
+
+  for (i = 0; i < 3; i++) {
+    px.d[i] = (((p.d[i] << shift) | n.d[i] >> (10 - shift))) & TMDS_VALUE_MASK;
+  }
+
+  return px;
+
+}
+
 uint8_t is_hsync(struct tmds_pixel px)
 {
   int i;
@@ -250,13 +263,13 @@ int main(int argc, char *argv[])
   int fd, fdo;
   uint32_t c, r;
   unsigned int i = 0, j;
-  struct tmds_pixel px, ppx;
+  struct tmds_pixel px, ppx, npx, apx, appx;
   uint32_t last_ctrl = 0, last_hsync = 0;
   struct channel_stats stats[3] = {};
   uint8_t data_aligned = 0, first_frame_ended = 0;
-  uint32_t data_aligned_at = 0;
   struct resolution res = {}, resb = {}, rest = {}, restb = {};
   uint32_t rgb_px;
+  uint32_t shift_lckd = 0;
   char ppm_hdr[200] = {};
 
   /* Initialize arguments to zero */
@@ -308,108 +321,143 @@ int main(int argc, char *argv[])
     }
   }
 
-  /* Read first pixel */
-  read(fd, &c, 4);
-  px = parse_tmds_pixel(c);
+  uint8_t shift = 0;
+  while (shift < 10) {
+    i = 0;
+    lseek(fd, 0, SEEK_SET);
 
-  /* Loop over the rest of the dump */
-  while(read(fd, &c, 4) != 0) {
-    ppx = px; /* set previous pixel */
+    /* Read first pixels */
+    read(fd, &c, 4);
     px = parse_tmds_pixel(c);
 
-    for (j = 0; j < 3; j++) {
-      switch(px.d[j]) {
-      case CTRLTOKEN_BLANK:
-        log(LOG_VERBOSE, "D%d: Found BLANK @ %d!\n", j, i);
-        stats[j].blanks++;
-        break;
-      case CTRLTOKEN_HSYNC:
-        log(LOG_VERBOSE, "D%d: Found HSYNC @ %d!\n", j, i);
-        stats[j].hsyncs++;
-        break;
-      case CTRLTOKEN_VSYNC:
-        log(LOG_VERBOSE, "D%d: Found VSYNC @ %d!\n", j, i);
-        stats[j].vsyncs++;
-        break;
-      case CTRLTOKEN_VHSYNC:
-        log(LOG_VERBOSE, "D%d: Found VSYNC + HSYNC @ %d!\n", j, i);
-        stats[j].hvsyncs++;
-        break;
-      }
-    }
+    read(fd, &c, 4);
+    npx = parse_tmds_pixel(c);
 
-    /* Image width calculation */
-    if (is_ctrl(px)) {
-      if (!res.x_lckd && res.last_token && (i - res.last_token > 1)) {
-        res.x = i - res.last_token - 1;
-        res.x_lckd = 1;
-      } else {
-        res.last_token = i;
-      }
-    }
-    if (is_hsync(px) && !is_hsync(ppx)) {
-      if (!resb.x_lckd && resb.last_token && (i - resb.last_token > 1)) {
-        resb.x = i - resb.last_token;
-        resb.x_lckd = 1;
-      } else {
-        resb.last_token = i;
-      }
-    }
+    /* Loop over the rest of the dump */
+    while(read(fd, &c, 4) != 0) {
+      ppx = px; /* set previous pixel */
+      px = npx;
+      npx = parse_tmds_pixel(c);
 
-    /* Image height calculation */
-    if (data_aligned) {
-      if (!is_ctrl(ppx) && is_ctrl(px)) {
-          rest.y++;
-          if (!first_frame_ended)
-            res.y++;
-      }
-      if (!is_hsync(ppx) && is_hsync(px)) {
-        restb.y++;
-          if (!first_frame_ended)
-            resb.y++;
-      }
-    }
+      /* Calculate actual pixel values */
+      apx = tmds_pixel_shift(px, npx, shift);
+      appx = tmds_pixel_shift(ppx, px, shift);
 
-    /* Check frame borders */
-    if (!is_vsync(px) && is_vsync(ppx)) {
-      if (data_aligned) {
-        first_frame_ended = 1;
-        if (args.one_frame) {
+      for (j = 0; j < 3; j++) {
+        switch(apx.d[j]) {
+        case CTRLTOKEN_BLANK:
+          log(LOG_VERBOSE, "D%d: Found BLANK @ %d!\n", j, i);
+          stats[j].blanks++;
+          break;
+        case CTRLTOKEN_HSYNC:
+          log(LOG_VERBOSE, "D%d: Found HSYNC @ %d!\n", j, i);
+          stats[j].hsyncs++;
+          break;
+        case CTRLTOKEN_VSYNC:
+          log(LOG_VERBOSE, "D%d: Found VSYNC @ %d!\n", j, i);
+          stats[j].vsyncs++;
+          break;
+        case CTRLTOKEN_VHSYNC:
+          log(LOG_VERBOSE, "D%d: Found VSYNC + HSYNC @ %d!\n", j, i);
+          stats[j].hvsyncs++;
           break;
         }
-      } else {
-        data_aligned = 1;
-        data_aligned_at = i;
       }
-    }
-    i++;
 
-    if (args.align_rgb && !data_aligned) {
-      continue;
-    }
+      /* Image width calculation */
+      if (is_ctrl(apx)) {
+        if (!res.x_lckd && res.last_token && (i - res.last_token > 1)) {
+          res.x = i - res.last_token - 1;
+          res.x_lckd = 1;
+        } else {
+          res.last_token = i;
+        }
+      }
+      if (is_hsync(apx) && !is_hsync(appx)) {
+        if (!resb.x_lckd && resb.last_token && (i - resb.last_token > 1)) {
+          resb.x = i - resb.last_token;
+          resb.x_lckd = 1;
+        } else {
+          resb.last_token = i;
+        }
+      }
 
-    if (! args.rgb_dump_filename)
-      continue;
+      /* Image height calculation */
+      if (data_aligned) {
+        if (!is_ctrl(appx) && is_ctrl(apx)) {
+            rest.y++;
+            if (!first_frame_ended)
+              res.y++;
+        }
+        if (!is_hsync(appx) && is_hsync(apx)) {
+          restb.y++;
+            if (!first_frame_ended)
+              resb.y++;
+        }
+      }
 
-    if (!is_ctrl(px)) {
-      rgb_px = tmds2rgb(px.d[0]);
-      rgb_px |= tmds2rgb(px.d[1]) << 8;
-      rgb_px |= tmds2rgb(px.d[2]) << 16;
-      write(fdo, &rgb_px, 3);
-    } else {
-      if (!args.show_syncs)
+      /* Check frame borders */
+      if (!is_vsync(apx) && is_vsync(appx)) {
+        if (data_aligned) {
+          first_frame_ended = 1;
+          if (args.one_frame) {
+            break;
+          }
+        } else {
+          data_aligned = 1;
+        }
+      }
+      i++;
+
+      if (args.align_rgb && !data_aligned)
         continue;
 
-      if (is_hsync(px) && is_vsync(px)) {
-        rgb_px = IMG_VHSYNC_COLOR;
-      } else if (is_hsync(px)) {
-        rgb_px = IMG_HSYNC_COLOR;
-      } else if (is_vsync(px)) {
-        rgb_px = IMG_VSYNC_COLOR;
-      } else {
-        rgb_px = IMG_BLANK_COLOR;
+      if (! args.rgb_dump_filename)
+        continue;
+
+      if (shift_lckd) {
+        if (!is_ctrl(apx)) {
+          rgb_px = tmds2rgb(apx.d[0]);
+          rgb_px |= tmds2rgb(apx.d[1]) << 8;
+          rgb_px |= tmds2rgb(apx.d[2]) << 16;
+          write(fdo, &rgb_px, 3);
+        } else {
+          if (!args.show_syncs)
+            continue;
+
+          if (is_hsync(apx) && is_vsync(apx)) {
+            rgb_px = IMG_VHSYNC_COLOR;
+          } else if (is_hsync(apx)) {
+            rgb_px = IMG_HSYNC_COLOR;
+          } else if (is_vsync(apx)) {
+            rgb_px = IMG_VSYNC_COLOR;
+          } else {
+            rgb_px = IMG_BLANK_COLOR;
+          }
+          write(fdo, &rgb_px, 3);
+        }
       }
-      write(fdo, &rgb_px, 3);
+    }
+
+    if (shift_lckd == 1)
+      break;
+
+    if (res.x != 0 && res.y != 0) {
+      log(LOG_VERBOSE, "Input data is shifted by %d bits.\n", shift);
+
+      /* Reset counter variables */
+      res.x = res.y = res.x_lckd = res.last_token = 0;
+      rest.x = rest.y = rest.x_lckd = rest.last_token = 0;
+      resb.x = resb.y = resb.x_lckd = resb.last_token = 0;
+      restb.x = restb.y = restb.x_lckd = restb.last_token = 0;
+
+      data_aligned = 0;
+      first_frame_ended = 0;
+
+      /* Mark run as final */
+      shift_lckd = 1;
+    } else {
+      shift++;
     }
   }
 
