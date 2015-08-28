@@ -365,16 +365,23 @@ int main(int argc, char *argv[])
 
       /* Image height calculation */
       if (data_aligned) {
-        if (!is_ctrl(appx) && is_ctrl(apx)) {
+        if (!is_ctrl(appx) && is_ctrl(apx) && !first_frame_ended)
+          res.y++;
+        if (!is_hsync(appx) && is_hsync(apx) && !first_frame_ended)
+          resb.y++;
+      }
+      if (args.one_frame || args.align_output) {
+        if (data_aligned && !(args.one_frame && first_frame_ended)) {
+          if (is_ctrl(appx) && !is_ctrl(apx))
             rest.y++;
-            if (!first_frame_ended)
-              res.y++;
+          if (is_hsync(appx) && !is_hsync(apx))
+            restb.y++;
         }
-        if (!is_hsync(appx) && is_hsync(apx)) {
+      } else {
+        if (is_ctrl(appx) && !is_ctrl(apx))
+          rest.y++;
+        if (is_hsync(appx) && !is_hsync(apx))
           restb.y++;
-            if (!first_frame_ended)
-              resb.y++;
-        }
       }
 
       /* Check frame borders */
@@ -447,6 +454,7 @@ int main(int argc, char *argv[])
 
   /* Calculate total output resolution */
   rest.x = (args.show_syncs) ? resb.x : res.x;
+  rest.y = (args.show_syncs) ? restb.y : rest.y;
 
   if (args.rgb_dump_filename && (strcasecmp(args.o_format, "ppm") == 0)) {
     /* Append header if using PPM format */
@@ -458,11 +466,7 @@ int main(int argc, char *argv[])
         return -1;
       }
 
-      sprintf(ppm_hdr,
-              IMG_PPM_HDR_FORMAT,
-              IMG_PPM_HDR_MAGIC,
-              rest.x,
-              (args.show_syncs) ? restb.y : rest.y);
+      sprintf(ppm_hdr, IMG_PPM_HDR_FORMAT, IMG_PPM_HDR_MAGIC, rest.x, rest.y);
 
       lseek(fdo, 0, SEEK_SET);
       write(fdo, ppm_hdr, strlen(ppm_hdr));
