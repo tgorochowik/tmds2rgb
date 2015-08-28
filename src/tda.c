@@ -20,61 +20,50 @@
 #define IMG_VHSYNC_COLOR        0xD4A190
 #define IMG_BLANK_COLOR         0xA1D490
 
-#define IMG_PPM_HDR_FORMAT      "%02s %020d %020d 255\n"
+#define IMG_PPM_HDR_FORMAT      "%2s %020d %020d 255\n"
 #define IMG_PPM_HDR_MAGIC       "P6"
 
 /* Prepare global variables for arg parser */
 const char *argp_program_version = TDA_VERSION;
-static char doc[] = "TMDS dump analyzer";
-static char args_doc[] = "<tmds_dump>";
+static const char doc[] = "TMDS dump analyzer";
+static const char args_doc[] = "<tmds_dump>";
 
 /* Prapare struct for holding parsed arguments */
 struct arguments {
   char *tmds_dump_filename;
   char *rgb_dump_filename;
-  int verbose;
-  int quiet;
-  int channel_info;
-  int show_syncs;
-  int align_rgb;
-  int one_frame;
-  int show_resolution;
-  int show_resolution_blanks;
-  int show_resolution_total;
+  int   verbose;
+  int   quiet;
+  int   channel_info;
+  int   show_syncs;
+  int   align_output;
+  int   one_frame;
+  int   show_resolution;
+  int   show_resolution_blanks;
+  int   show_resolution_total;
   char *o_format;
 };
 
 static struct argp_option argp_options[] = {
-  {"verbose",                   'v', 0,      0,
-    "Produce verbose output" },
-  {"quiet",                     'q', 0,      0,
-    "Don't produce any output" },
-  {"resolution",                'r', 0,      0,
-    "Calculate and show the resolution of a single frame" },
-  {"resolution-virt",           'R', 0,      0,
-    "Calculate and show the resolution of a single frame including blanks" },
-  {"resolution-total",          't', 0,      0,
-    "Calculate and show the total resolution of chosen region" },
-  {"channel-info",              'c', 0,      0,
-    "Show count of control tokens on each channel" },
-  {0,                            0,   0,      0,
-    "Output writing options:"},
-  {"format",                    'f', "FORMAT", 0,
-    "Write the output file using specified FORMAT. " \
-    "Available formats are: rgb/ppm." },
-  {"out",                       'o', "FILE", 0,
-    "Write decoded image data to FILE" },
-  {"include-syncs",             's', 0,      0,
-    "Include syncs visualization to the output file" },
-  {"align",                     'a', 0,      0,
-    "Align dumped data to first valid VSYNC" },
-  {"one-frame",                 '1', 0,      0,
-    "Try to extract and dump only one frame" },
+  {"verbose",               'v', 0,        0, "Produce verbose output" },
+  {"quiet",                 'q', 0,        0, "Don't produce any output" },
+  {"channel-info",          'c', 0,        0, "Show count of control tokens on each channel" },
+  {0,                        0,  0,        0, "Resolution calculation options:"},
+  {"resolution",            'r', 0,        0, "Calculate and show the resolution of a single frame" },
+  {"resolution-virtual",    'R', 0,        0, "Calculate and show the resolution of a single frame including blanks" },
+  {"resolution-total",      't', 0,        0, "Calculate and show the total resolution of chosen region" },
+  {0,                        0,  0,        0, "Output writing options:"},
+  {"format",                'f', "FORMAT", 0, "Write the output file using specified FORMAT, available formats are: rgb/ppm" },
+  {"out",                   'o', "FILE",   0, "Write decoded image data to FILE" },
+  {"include-syncs",         's', 0,        0, "Include syncs visualization to the output file" },
+  {"align",                 'a', 0,        0, "Align dumped data to first valid VSYNC" },
+  {"one-frame",             '1', 0,        0, "Try to extract and dump only one frame" },
   { 0 }
 };
 
 /* Define argument parser */
-static error_t argp_parser(int key, char *arg, struct argp_state *state) {
+static error_t argp_parser(int key, char *arg, struct argp_state *state)
+{
   struct arguments *arguments = state->input;
 
   switch (key) {
@@ -94,11 +83,11 @@ static error_t argp_parser(int key, char *arg, struct argp_state *state) {
     arguments->show_syncs = 1;
     break;
   case 'a':
-    arguments->align_rgb = 1;
+    arguments->align_output = 1;
     break;
   case '1':
     arguments->one_frame = 1;
-    arguments->align_rgb = 1;
+    arguments->align_output = 1;
     break;
   case 'r':
     arguments->show_resolution = 1;
@@ -141,11 +130,11 @@ static struct argp argp = { argp_options, argp_parser, args_doc, doc, 0, 0, 0 };
 
 uint8_t log_priority;
 
-#define log(priority,format,args...) \
-            do { \
-              if (priority & log_priority) { \
-              printf(format, ##args); } \
-            } while(0);
+#define log(priority,format,...) \
+  do { \
+    if (priority & log_priority) { \
+      printf(format, __VA_ARGS__); } \
+  } while(0)
 
 /* Image analysis related definitions */
 struct channel_stats {
@@ -208,22 +197,19 @@ struct tmds_pixel tmds_pixel_shift(struct tmds_pixel p, struct tmds_pixel n, uin
   struct tmds_pixel px;
   int i;
 
-  for (i = 0; i < 3; i++) {
+  for (i = 0; i < 3; i++)
     px.d[i] = (((p.d[i] << shift) | n.d[i] >> (10 - shift))) & TMDS_VALUE_MASK;
-  }
 
   return px;
-
 }
 
 uint8_t is_hsync(struct tmds_pixel px)
 {
   int i;
-  for (i = 0; i < 3; i++) {
-    if (px.d[i] == CTRLTOKEN_HSYNC || px.d[i] == CTRLTOKEN_VHSYNC) {
+
+  for (i = 0; i < 3; i++)
+    if (px.d[i] == CTRLTOKEN_HSYNC || px.d[i] == CTRLTOKEN_VHSYNC)
       return 1;
-    }
-  }
 
   return 0;
 }
@@ -231,11 +217,10 @@ uint8_t is_hsync(struct tmds_pixel px)
 uint8_t is_vsync(struct tmds_pixel px)
 {
   int i;
-  for (i = 0; i < 3; i++) {
-    if (px.d[i] == CTRLTOKEN_VSYNC || px.d[i] == CTRLTOKEN_VHSYNC) {
+
+  for (i = 0; i < 3; i++)
+    if (px.d[i] == CTRLTOKEN_VSYNC || px.d[i] == CTRLTOKEN_VHSYNC)
       return 1;
-    }
-  }
 
   return 0;
 }
@@ -243,11 +228,10 @@ uint8_t is_vsync(struct tmds_pixel px)
 uint8_t is_blank(struct tmds_pixel px)
 {
   int i;
-  for (i = 0; i < 3; i++) {
-    if (px.d[i] == CTRLTOKEN_BLANK) {
+
+  for (i = 0; i < 3; i++)
+    if (px.d[i] == CTRLTOKEN_BLANK)
       return 1;
-    }
-  }
 
   return 0;
 }
@@ -261,16 +245,16 @@ int main(int argc, char *argv[])
 {
   struct arguments args;
   int fd, fdo;
-  uint32_t c, r;
+  uint32_t c;
   unsigned int i = 0, j;
   struct tmds_pixel px, ppx, npx, apx, appx;
-  uint32_t last_ctrl = 0, last_hsync = 0;
-  struct channel_stats stats[3] = {};
+  struct channel_stats stats[3] = {0};
   uint8_t data_aligned = 0, first_frame_ended = 0;
-  struct resolution res = {}, resb = {}, rest = {}, restb = {};
+  struct resolution res = {0}, resb = {0}, rest = {0}, restb = {0};
   uint32_t rgb_px;
   uint32_t shift_lckd = 0;
-  char ppm_hdr[200] = {};
+  char ppm_hdr[200] = {0};
+  uint8_t shift = 0;
 
   /* Initialize arguments to zero */
   args.verbose = 0;
@@ -278,7 +262,7 @@ int main(int argc, char *argv[])
   args.channel_info = 0;
   args.rgb_dump_filename = NULL;
   args.show_syncs = 0;
-  args.align_rgb = 0;
+  args.align_output = 0;
   args.one_frame = 0;
   args.show_resolution = 0;
   args.show_resolution_blanks = 0;
@@ -307,9 +291,7 @@ int main(int argc, char *argv[])
   }
 
   if (args.rgb_dump_filename) {
-    fdo = open(args.rgb_dump_filename,
-               O_RDWR | O_CREAT | O_TRUNC,
-               S_IRWXU | S_IRWXG);
+    fdo = open(args.rgb_dump_filename, O_RDWR | O_CREAT | O_TRUNC, S_IRWXU | S_IRWXG);
     if (fdo < 0) {
       log(LOG_ERROR, "Could not open %s file.\n", args.rgb_dump_filename);
       return -1;
@@ -321,7 +303,6 @@ int main(int argc, char *argv[])
     }
   }
 
-  uint8_t shift = 0;
   while (shift < 10) {
     i = 0;
     lseek(fd, 0, SEEK_SET);
@@ -409,7 +390,7 @@ int main(int argc, char *argv[])
       }
       i++;
 
-      if (args.align_rgb && !data_aligned)
+      if (args.align_output && !data_aligned)
         continue;
 
       if (! args.rgb_dump_filename)
