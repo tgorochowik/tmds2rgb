@@ -20,9 +20,6 @@
 #define IMG_VHSYNC_COLOR        0xD4A190
 #define IMG_BLANK_COLOR         0xA1D490
 
-#define IMG_PPM_HDR_FORMAT      "%2s %020d %020d 255\n"
-#define IMG_PPM_HDR_MAGIC       "P6"
-
 /* Prepare global variables for arg parser */
 const char *argp_program_version = TDA_VERSION;
 static const char doc[] = "TMDS dump analyzer";
@@ -41,7 +38,6 @@ struct arguments {
   int   show_resolution;
   int   show_resolution_blanks;
   int   show_resolution_total;
-  char *o_format;
 };
 
 static struct argp_option argp_options[] = {
@@ -53,7 +49,6 @@ static struct argp_option argp_options[] = {
   {"resolution-virtual",    'R', 0,        0, "Calculate and show the resolution of a single frame including blanks" },
   {"resolution-total",      't', 0,        0, "Calculate and show the total resolution of chosen region" },
   {0,                        0,  0,        0, "Output writing options:"},
-  {"format",                'f', "FORMAT", 0, "Write the output file using specified FORMAT, available formats are: rgb/ppm" },
   {"out",                   'o', "FILE",   0, "Write decoded image data to FILE" },
   {"include-syncs",         's', 0,        0, "Include syncs visualization to the output file" },
   {"align",                 'a', 0,        0, "Align dumped data to first valid VSYNC" },
@@ -97,9 +92,6 @@ static error_t argp_parser(int key, char *arg, struct argp_state *state)
     break;
   case 't':
     arguments->show_resolution_total = 1;
-    break;
-  case 'f':
-    arguments->o_format = arg;
     break;
   case ARGP_KEY_ARG:
     switch(state->arg_num) {
@@ -253,7 +245,6 @@ int main(int argc, char *argv[])
   struct resolution res = {0}, resb = {0}, rest = {0}, restb = {0};
   uint32_t rgb_px;
   uint32_t shift_lckd = 0;
-  char ppm_hdr[200] = {0};
   uint8_t shift = 0;
 
   /* Initialize arguments to zero */
@@ -267,7 +258,6 @@ int main(int argc, char *argv[])
   args.show_resolution = 0;
   args.show_resolution_blanks = 0;
   args.show_resolution_total = 0;
-  args.o_format = "rgb";
 
   /* Parse program arguments */
   argp_parse(&argp, argc, argv, 0, 0, &args);
@@ -278,11 +268,6 @@ int main(int argc, char *argv[])
 
   if (!args.quiet)
     log_priority |= LOG_INFO | LOG_ERROR;
-
-  /* Check output format */
-  if (strcasecmp(args.o_format, "RGB") && strcasecmp(args.o_format, "PPM")) {
-    log(LOG_ERROR, "Format not supported: %s. Using RGB.\n", args.o_format);
-  }
 
   fd = open(args.tmds_dump_filename, O_RDONLY);
   if (fd < 0) {
@@ -295,11 +280,6 @@ int main(int argc, char *argv[])
     if (fdo < 0) {
       log(LOG_ERROR, "Could not open %s file.\n", args.rgb_dump_filename);
       return -1;
-    }
-    /* Reserve space for header for PPM format */
-    if (strcasecmp(args.o_format, "ppm") == 0) {
-      sprintf(ppm_hdr, IMG_PPM_HDR_FORMAT, IMG_PPM_HDR_MAGIC, 0, 0);
-      write(fdo, ppm_hdr, strlen(ppm_hdr));
     }
   }
 
@@ -455,24 +435,6 @@ int main(int argc, char *argv[])
   /* Calculate total output resolution */
   rest.x = (args.show_syncs) ? resb.x : res.x;
   rest.y = (args.show_syncs) ? restb.y : rest.y;
-
-  if (args.rgb_dump_filename && (strcasecmp(args.o_format, "ppm") == 0)) {
-    /* Append header if using PPM format */
-    if (args.rgb_dump_filename) {
-      fdo = open(args.rgb_dump_filename, O_WRONLY, S_IRWXU | S_IRWXG);
-      if (fdo < 0) {
-        log(LOG_ERROR, "Could not re-open %s file.\n",
-            args.rgb_dump_filename);
-        return -1;
-      }
-
-      sprintf(ppm_hdr, IMG_PPM_HDR_FORMAT, IMG_PPM_HDR_MAGIC, rest.x, rest.y);
-
-      lseek(fdo, 0, SEEK_SET);
-      write(fdo, ppm_hdr, strlen(ppm_hdr));
-    }
-    close(fdo);
-  }
 
   if (args.show_resolution)
     log(LOG_INFO, "Calculated frame resolution: %dx%d\n", res.x, res.y);
