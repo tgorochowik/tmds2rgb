@@ -1,0 +1,25 @@
+tmds-dump-analyzer
+
+This is a TMDS dump analyzer. It takes TMDS data and tries to extract raw rgb
+data along with information about it. TMDS format is used by interfaces like
+HDMI or DVI. This program can be used to validate data extracted from these
+interfaces.
+
+The tmds dump has to use 32b packages where the 2 last bits used as padding.
+
+The data can be shifted, so there is no need to synchronize the data before
+collecting the tmds dump.
+
+Example usage:
+./tda tmds.dump -1 -s -o rgb.dump -t
+
+extracts a single frame from the tmds.dump file, adds blanks visualization and
+saves it in rgb.dump file. The -t switch makes it also calculate and print the
+resolution of the output image.
+
+To view the extracted image, the ImageMagick suite (http://imagemagick.org/) is
+recommended. For example to convert the rgb.dump to png format run:
+
+convert -size 2201x1126 -depth 8 rgb:rgb.dump frame.png
+
+For more detailed information about usage run ./tda --help
