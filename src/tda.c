@@ -125,7 +125,7 @@ uint8_t log_priority;
 #define log(priority,format,...) \
   do { \
     if (priority & log_priority) { \
-      printf(format, __VA_ARGS__); } \
+      fprintf(stderr, format, __VA_ARGS__); } \
   } while(0)
 
 /* Image analysis related definitions */
